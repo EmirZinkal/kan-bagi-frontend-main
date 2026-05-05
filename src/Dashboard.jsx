@@ -132,7 +132,7 @@ function Dashboard() {
   const bagiscilariYukle = async () => {
     try {
       const endpoint = selectedKan
-        ? `${API_URL}/api/donors/getsuitabledonors/${encodeURIComponent(selectedKan)}`
+        ? `${API_URL}/api/donors/getbysbloodtype/${encodeURIComponent(selectedKan)}`
         : `${API_URL}/api/donors/getlist`;
       const res = await fetchWithAuth(endpoint);
       const data = await res.json();
@@ -155,7 +155,7 @@ function Dashboard() {
         setKullaniciBilgisi(data);
         setProfilAcik(true);
       } else {
-        toast.error("Profil bilgileri alınamadı.");
+        toast.error("Yapım Aşamasında. ⏳");
       }
     } catch (err) {
       toast.error("Sunucu bağlantı hatası.");

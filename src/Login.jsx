@@ -76,7 +76,7 @@ function Login() {
     return (
         <div style={arka}>
             <div style={kart}>
-                <h2 style={{ textAlign: "center" }}>Hastane Girişi (Web)</h2>
+                <h2 style={{ textAlign: "center" }}>Kan Merkezi Girişi</h2>
 
                 <input
                     type="email"

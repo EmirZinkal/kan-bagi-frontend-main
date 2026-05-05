@@ -39,7 +39,7 @@ function Navbar() {
     <nav style={styles.navbar}>
       <div style={styles.logoKismi}>
         <span style={{ fontSize: "1.8rem" }}>🩸</span>
-        <h2 style={{ margin: 0, color: "white" }}>Merkez Yönetim</h2>
+        <h2 style={{ margin: 0, color: "white" }}>Kan Bağışı Yönetim Merkezi</h2>
       </div>
 
       <div style={styles.menuKismi}>
