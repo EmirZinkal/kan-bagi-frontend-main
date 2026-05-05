@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "react-hot-toast";
+import { TR_DATA } from "./turkiyeData";
 
 const API_URL = "http://localhost:5245";
 
@@ -10,11 +11,16 @@ function KullaniciYonetimi() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State'leri
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("");
   const [hospitalName, setHospitalName] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [selectedDistrict, setSelectedDistrict] = useState("");
+  const [selectedGender, setSelectedGender] = useState("");
+  const [phone, setPhone] = useState("");
 
   const fetchWithAuth = async (url, options = {}) => {
     const token = localStorage.getItem("token");
@@ -28,13 +34,13 @@ function KullaniciYonetimi() {
   const kullanicilariGetir = async () => {
     try {
       setLoading(true);
-      // Doğru rota: /api/hospitals/getall
       const res = await fetchWithAuth(`${API_URL}/api/hospitals/getall`);
       const result = await res.json();
 
       if (res.ok) {
-        // Backend'den gelen IDataResult yapısı gereği .data kullanılır
-        setUsers(result.data || []);
+        // KRİTİK: Backend "Data" (büyük D) olarak gönderiyorsa result.Data yazmalısın
+        // Her ihtimale karşı ikisini de kontrol edelim:
+        setUsers(result.Data || result.data || []);
       }
     } catch (err) {
       console.error("Liste yüklenemedi:", err);
@@ -55,15 +61,10 @@ function KullaniciYonetimi() {
 
   const kullaniciOlustur = async (e) => {
     e.preventDefault();
-    if (!fullName || !email || !password || !hospitalName) {
+    if (!firstName || !lastName || !email || !password || !hospitalName) {
       toast.error("Lütfen tüm alanları doldurun!");
       return;
     }
-
-    // Ad ve Soyadı ayır (Backend FirstName ve LastName beklediği için)
-    const nameParts = fullName.trim().split(" ");
-    const firstName = nameParts[0];
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
 
     setIsSubmitting(true);
     try {
@@ -75,43 +76,60 @@ function KullaniciYonetimi() {
           FirstName: firstName,
           LastName: lastName,
           HospitalName: hospitalName,
-          // EKSİK OLAN VE VALIDASYONA TAKILAN ALANLAR:
-          Gender: "Belirtilmedi",
-          Phone: "05000000000",
-          City: "Belirtilmedi",
-          District: "Belirtilmedi"
+          Gender: selectedGender,
+          Phone: phone,
+          City: selectedCity,
+          District: selectedDistrict
         }),
       });
 
-      const result = await res.json();
+      // JSON hatasını engellemek için önce metni alıyoruz
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text); // Eğer JSON ise objeye çevir
+      } catch (e) {
+        result = { message: text }; // Değilse ham metni mesaj yap
+      }
 
       if (res.ok) {
-        toast.success("Hastane kaydı başarılı!");
-        setFullName(""); setEmail(""); setPassword(""); setHospitalName("");
+        toast.success(result.message || "Kayıt Başarılı! 🎉");
+        setFirstName(""); setLastName(""); setEmail(""); setPassword(""); setHospitalName(""); setSelectedCity(""); setSelectedDistrict(""); setSelectedGender(""); setPhone("");
         kullanicilariGetir();
       } else {
-        // Backend'den gelen detaylı hata mesajını göster (FluentValidation hataları burada görünür)
-        toast.error(result.message || "Validasyon hatası: Lütfen tüm alanları doğru formatta doldurun.");
+        // Backend bazen hata mesajlarını "Errors" dizisi içinde döner (FluentValidation)
+        const errorMsg = result?.message || (result?.Errors ? result.Errors[0].ErrorMessage : "Doğrulama hatası!");
+        toast.error(errorMsg);
+        console.error("Backend Hata Detayı:", result);
       }
     } catch (err) {
-      toast.error("Bağlantı hatası.");
+      console.error("Bağlantı Hatası:", err);
+      toast.error("Sunucuya ulaşılamıyor.");
     } finally {
       setIsSubmitting(false);
     }
   };
   const kullaniciSil = async (id) => {
-    if (!window.confirm("Bu hesabı silmek istediğinize emin misiniz?")) return;
+    // id parametresinin 'UserId' olduğundan emin olmalısın
+    if (!window.confirm("Bu hastaneyi ve yetkili hesabını silmek istediğinize emin misiniz?")) return;
 
     try {
-      const res = await fetchWithAuth(`${API_URL}/api/users/delete/${id}`, { method: "DELETE" });
+      // URL'yi /api/hospitals/delete/ olarak güncelledik
+      const res = await fetchWithAuth(`${API_URL}/api/hospitals/delete/${id}`, {
+        method: "DELETE"
+      });
+
+      const result = await res.json();
+
       if (res.ok) {
-        toast.success("Hesap silindi.");
-        kullanicilariGetir();
+        toast.success(result.Message || "Kayıt başarıyla silindi.");
+        kullanicilariGetir(); // Listeyi güncelle
       } else {
-        toast.error("Silme işlemi başarısız.");
+        toast.error(result.Message || "Silme işlemi başarısız.");
       }
     } catch (err) {
-      toast.error("Hata oluştu.");
+      console.error("Silme Hatası:", err);
+      toast.error("Bağlantı hatası oluştu.");
     }
   };
 
@@ -128,8 +146,12 @@ function KullaniciYonetimi() {
           <form onSubmit={kullaniciOlustur}>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>Ad Soyad / Yetkili Kişi</label>
-              <input style={styles.input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Örn: Dr. Ahmet Yılmaz" />
+              <label style={styles.label}>Ad</label>
+              <input style={styles.input} value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Örn: Dr. Ahmet" />
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Soyad</label>
+              <input style={styles.input} value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Örn: Yılmaz" />
             </div>
 
             <div style={styles.formGroup}>
@@ -137,7 +159,54 @@ function KullaniciYonetimi() {
               <input style={styles.input} value={hospitalName} onChange={(e) => setHospitalName(e.target.value)} placeholder="Örn: Şehir Hastanesi" />
             </div>
 
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Cinsiyet</label>
+              <select
+                style={styles.input}
+                value={selectedGender}
+                onChange={(e) => setSelectedGender(e.target.value)}
+              >
+                <option value="">Cinsiyet Seçiniz</option>
+                <option value="Erkek">Erkek</option>
+                <option value="Kadın">Kadın</option>
+              </select>
+            </div>
 
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Şehir</label>
+              <select
+                style={styles.input}
+                value={selectedCity}
+                onChange={(e) => {
+                  setSelectedCity(e.target.value);
+                  setSelectedDistrict(""); // Şehir değişince ilçe sıfırlansın
+                }}
+              >
+                <option value="">Şehir Seçiniz</option>
+                {Object.keys(TR_DATA).map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>İlçe</label>
+              <select
+                style={styles.input}
+                value={selectedDistrict}
+                onChange={(e) => setSelectedDistrict(e.target.value)}
+                disabled={!selectedCity} // Şehir seçilmeden tıklanamaz
+              >
+                <option value="">İlçe Seçiniz</option>
+                {selectedCity && TR_DATA[selectedCity].map(dist => (
+                  <option key={dist} value={dist}>{dist}</option>
+                ))}
+              </select>
+            </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Cep Telefonu</label>
+              <input type="tel" style={styles.input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="05xx xxx xx xx" />
+            </div>
             <div style={styles.formGroup}>
               <label style={styles.label}>Giriş E-Postası</label>
               <input type="email" style={styles.input} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ornek@hastane.com" />
@@ -159,18 +228,34 @@ function KullaniciYonetimi() {
           <h3 style={styles.kartBaslik}>👥 Sistemdeki Kullanıcılar</h3>
           {loading ? <p>Yükleniyor...</p> : (
             <div style={{ maxHeight: "500px", overflowY: "auto" }}>
-              {users.map((u) => (
-                <div key={u.id} style={styles.kullaniciKart}>
+              {users.map((u, index) => (
+                <div key={u.HospitalId || index} style={styles.kullaniciKart}>
                   <div style={{ flex: 1 }}>
-                    <strong style={{ display: "block", fontSize: "1.1rem" }}>{u.fullName}</strong>
-                    <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>{u.hospitalName}</span>
-                    <p style={{ margin: "5px 0", color: "#374151", fontWeight: "500" }}>✉️ {u.email}</p>
-                    <span style={styles.badge}>{u.role}</span>
+                    <strong style={{ display: "block", fontSize: "1.2rem", color: "#b91c1c" }}>
+                      {u.HospitalName}
+                    </strong>
+
+                    {/* Yeni eklenen görevli bilgileri */}
+                    <p style={{ margin: "8px 0 4px 0", fontWeight: "600", color: "#1f2937" }}>
+                      👤 Yetkili: {u.ContactPersonName}
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#374151", fontSize: "0.9rem" }}>
+                      📞 Telefon: {u.ContactPhone}
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#6b7280", fontSize: "0.85rem" }}>
+                      ✉️ E-posta: {u.ContactEmail}
+                    </p>
+
+                    <hr style={{ border: "0.5px solid #f3f4f6", margin: "10px 0" }} />
+
+                    <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+                      📍 {u.City} / {u.District}
+                    </span>
                   </div>
-                  <button onClick={() => kullaniciSil(u.id)} style={styles.silButon}>Sil</button>
+                  <button onClick={() => kullaniciSil(u.UserId)} style={styles.silButon}>Sil</button>
                 </div>
               ))}
-              {users.length === 0 && <p style={{ color: "#6b7280" }}>Henüz kayıtlı kullanıcı yok.</p>}
+              {users.length === 0 && <p style={{ color: "#6b7280" }}>Henüz kayıtlı hastane yok.</p>}
             </div>
           )}
         </div>
