@@ -78,9 +78,10 @@ function Dashboard() {
     if (!window.confirm("Bağışın fiziksel olarak tamamlandığını ve stokların güncelleneceğini onaylıyor musunuz?")) return;
 
     try {
+      const url = `${API_URL}/api/donors/completedonation?donorId=${donorId}${requestId ? `&requestId=${requestId}` : ""}`;
       // Backend CompleteDonation metodu donorId'yi Query String olarak bekliyor olabilir 
       // (Controller'da int donorId olarak tanımlandığı için)
-      const res = await fetchWithAuth(`${API_URL}/api/donors/completedonation?donorId=${donorId}`, {
+      const res = await fetchWithAuth(url, {
         method: "POST"
       });
 
