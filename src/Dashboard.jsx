@@ -74,6 +74,34 @@ function Dashboard() {
     }
   };
 
+  const bagisTamamla = async (donorId, requestId) => {
+    if (!window.confirm("Bağışın fiziksel olarak tamamlandığını ve stokların güncelleneceğini onaylıyor musunuz?")) return;
+
+    try {
+      // Backend CompleteDonation metodu donorId'yi Query String olarak bekliyor olabilir 
+      // (Controller'da int donorId olarak tanımlandığı için)
+      const res = await fetchWithAuth(`${API_URL}/api/donors/completedonation?donorId=${donorId}`, {
+        method: "POST"
+      });
+
+      const result = await res.json();
+
+      if (res.ok) {
+        toast.success("Bağış başarıyla kaydedildi, stoklar güncellendi! 💉");
+        // Tüm verileri (stok, talep listesi, istatistikler) yenile
+        verileriYukle();
+        bagiscilariYukle();
+        // Eğer bir talep seçiliyse onun bildirim giden listesini de tazele
+        if (requestId) talepBildirimleriniYukle(requestId);
+      } else {
+        toast.error(result.message || "Bağış tamamlanırken bir hata oluştu.");
+      }
+    } catch (err) {
+      console.error("Bağış tamamlama hatası:", err);
+      toast.error("Sunucu bağlantı hatası.");
+    }
+  };
+
   const verileriYukle = async () => {
     const kullaniciHamVeri = localStorage.getItem("kullanici");
 
@@ -530,27 +558,40 @@ function Dashboard() {
                   <h4 style={{ margin: "10px 0 5px 0", color: "#111827", fontSize: "1.1rem" }}>{adSoyad}</h4>
 
                   {/* Sadece talep seçiliyse yanıt durumunu göster */}
-                  {selectedTalepId ? (
-                    <div style={{
-                      padding: "4px 10px",
-                      borderRadius: "8px",
-                      fontSize: "0.85rem",
-                      fontWeight: "bold",
-                      marginTop: "5px",
-                      backgroundColor: yanit === "Accepted" ? "#dcfce7" : yanit === "Rejected" ? "#fee2e2" : "#f3f4f6",
-                      color: yanit === "Accepted" ? "#166534" : yanit === "Rejected" ? "#991b1b" : "#374151"
-                    }}>
-                      {yanit === "Accepted" ? "✅ Gelecek" : yanit === "Rejected" ? "❌ Gelemiyor" : "⏳ Yanıt Bekleniyor"}
-                    </div>
-                  ) : (
-                    // Genel listede kan grubunu ve konumu göster
+                  {selectedTalepId && (
                     <>
-                      <p style={{ margin: "5px 0", fontSize: "0.95rem", color: "#4b5563" }}>
-                        Kan Grubu: <strong style={{ color: "#ef4444" }}>{kanGrup}</strong>
-                      </p>
-                      <p style={{ margin: "5px 0", fontSize: "0.85rem", color: "#6b7280" }}>
-                        📍 {d.City || d.city || "-"} / {d.District || d.district || d.Region || d.region || "-"}
-                      </p>
+                      <div style={{
+                        padding: "4px 10px",
+                        borderRadius: "8px",
+                        fontSize: "0.85rem",
+                        fontWeight: "bold",
+                        marginTop: "5px",
+                        backgroundColor: yanit === "Accepted" ? "#dcfce7" : yanit === "Rejected" ? "#fee2e2" : "#f3f4f6",
+                        color: yanit === "Accepted" ? "#166534" : yanit === "Rejected" ? "#991b1b" : "#374151"
+                      }}>
+                        Durum: {yanit === "Accepted" ? "✅ Gelecek" : yanit === "Rejected" ? "❌ Gelemiyor" : "⏳ Yanıt Bekleniyor"}
+                      </div>
+
+                      {/* EĞER BAĞIŞÇI GELECEĞİM DEMİŞSE BUTONU GÖSTER */}
+                      {yanit === "Accepted" && (
+                        <button
+                          onClick={() => bagisTamamla(d.DonorId || d.donorId, selectedTalepId)}
+                          style={{
+                            marginTop: "10px",
+                            width: "100%",
+                            padding: "8px",
+                            backgroundColor: "#10b981",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontWeight: "600",
+                            fontSize: "0.8rem"
+                          }}
+                        >
+                          ✅ Bağışı Tamamla
+                        </button>
+                      )}
                     </>
                   )}
 
