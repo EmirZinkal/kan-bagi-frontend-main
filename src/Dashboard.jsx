@@ -4,6 +4,7 @@ import { Toaster, toast } from "react-hot-toast";
 const API_URL = "http://localhost:5245";
 
 const listeyeCevir = (res) => {
+  if (res && Array.isArray(res.Data)) return res.Data; // PascalCase (C#) desteği eklendi
   if (res && Array.isArray(res.data)) return res.data;
   if (Array.isArray(res)) return res;
   return [];
@@ -51,6 +52,9 @@ function Dashboard() {
   // PROFİL STATE'LERİ
   const [profilAcik, setProfilAcik] = useState(false);
   const [kullaniciBilgisi, setKullaniciBilgisi] = useState(null);
+
+  const [selectedTalepId, setSelectedTalepId] = useState(null);
+  const [notifiedDonors, setNotifiedDonors] = useState([]);
 
   const fetchWithAuth = async (url, options = {}) => {
     const token = localStorage.getItem("token");
@@ -154,6 +158,16 @@ function Dashboard() {
     } catch (err) {
       console.error("Bağışçı yükleme hatası:", err);
       setDonors([]);
+    }
+  };
+
+  const talepBildirimleriniYukle = async (requestId) => {
+    try {
+      const res = await fetchWithAuth(`${API_URL}/api/notifications/getnotifieddonors/${requestId}`);
+      const data = await res.json();
+      setNotifiedDonors(listeyeCevir(data));
+    } catch (err) {
+      setNotifiedDonors([]);
     }
   };
 
@@ -378,7 +392,17 @@ function Dashboard() {
                 return (
                   <div
                     key={talepId}
-                    onClick={() => setSelectedKan(kan)}
+                    onClick={() => {
+                      if (selectedTalepId === talepId) {
+                        setSelectedTalepId(null);
+                        setNotificationDonors([]);
+                      } else {
+                        setSelectedTalepId(talepId);
+                        talepBildirimleriniYukle(talepId);
+                      }
+                      setSelectedKan(kan);
+                    }}
+                    //setSelectedKan(kan)}
                     style={{
                       ...styles.talepKart,
                       borderColor: isSelected ? "#ef4444" : "#e5e7eb",
@@ -481,24 +505,64 @@ function Dashboard() {
       {/* ALT BÖLÜM: BAĞIŞÇILAR */}
       <div style={{ marginTop: "40px" }}>
         <h3 style={styles.kartAnaBaslik}>
-          {selectedKan ? `🎯 ${selectedKan} Grubu İçin Uygun Bağışçılar` : "👥 Tüm Bağışçılar"}
+          {selectedTalepId ? `🎯 Bu Talep İçin Bildirim Giden Bağışçılar` : "👥 Genel Bağışçı Listesi"}
         </h3>
-        {selectedKan && (
-          <p style={styles.filtreMesaji}>Şu an <strong>{selectedKan}</strong> grubundaki talebe uygun kişileri görüntülüyorsunuz. Seçimi kaldırmak için talebe tekrar tıklayın.</p>
-        )}
+
         <div style={styles.donorScroll}>
-          {donors.length === 0 ? (
-            <p style={styles.bosDurum}>Uygun bağışçı bulunamadı.</p>
+          {/* Liste boşsa uyarı ver, doluysa map et */}
+          {(selectedTalepId ? notifiedDonors : donors).length === 0 ? (
+            <p style={styles.bosDurum}>Gösterilecek bağışçı bulunamadı.</p>
           ) : (
-            donors.map((d) => (
-              <div key={d.donorId || d.id} style={styles.donorKart}>
-                <div style={styles.donorAvatar}>{d.fullName?.charAt(0) || d.FullName?.charAt(0) || "B"}</div>
-                <h4 style={{ margin: "10px 0 5px 0", color: "#111827", fontSize: "1.1rem" }}>{d.fullName || d.FullName || "İsimsiz Bağışçı"}</h4>
-                <p style={{ margin: "5px 0", fontSize: "0.95rem", color: "#4b5563" }}>Kan Grubu: <strong style={{ color: "#ef4444" }}>{d.bloodType || d.BloodType || "-"}</strong></p>
-                <p style={{ margin: "5px 0", fontSize: "0.85rem", color: "#6b7280" }}>📍 {d.city || d.City || "-"} / {d.region || d.Region || d.district || d.District || "-"}</p>
-                <div style={styles.donorAltBilgi}>🗓 Son Bağış: <strong>{d.lastDonationDate || d.LastDonationDate ? new Date(d.lastDonationDate || d.LastDonationDate).toLocaleDateString() : "Kayıt Yok"}</strong></div>
-              </div>
-            ))
+            (selectedTalepId ? notifiedDonors : donors).map((d, index) => {
+              // İsim eşleşmesini hem küçük hem büyük harf için kontrol ediyoruz
+              const adSoyad = d.FullName || d.fullName || d.Title || d.title || "İsimsiz";
+              const yanit = d.ResponseStatus || d.responseStatus || "Pending";
+              const kanGrup = d.BloodType || d.bloodType || "-";
+
+              // Konsoldaki 'unique key' hatasını önlemek için benzersiz bir ID oluşturuyoruz
+              const benzersizKey = d.UserNotificationId || d.userNotificationId || d.DonorId || d.donorId || d.id || index;
+
+              return (
+                <div key={benzersizKey} style={styles.donorKart}>
+                  <div style={styles.donorAvatar}>
+                    {adSoyad.charAt(0).toUpperCase()}
+                  </div>
+                  <h4 style={{ margin: "10px 0 5px 0", color: "#111827", fontSize: "1.1rem" }}>{adSoyad}</h4>
+
+                  {/* Sadece talep seçiliyse yanıt durumunu göster */}
+                  {selectedTalepId ? (
+                    <div style={{
+                      padding: "4px 10px",
+                      borderRadius: "8px",
+                      fontSize: "0.85rem",
+                      fontWeight: "bold",
+                      marginTop: "5px",
+                      backgroundColor: yanit === "Accepted" ? "#dcfce7" : yanit === "Rejected" ? "#fee2e2" : "#f3f4f6",
+                      color: yanit === "Accepted" ? "#166534" : yanit === "Rejected" ? "#991b1b" : "#374151"
+                    }}>
+                      {yanit === "Accepted" ? "✅ Gelecek" : yanit === "Rejected" ? "❌ Gelemiyor" : "⏳ Yanıt Bekleniyor"}
+                    </div>
+                  ) : (
+                    // Genel listede kan grubunu ve konumu göster
+                    <>
+                      <p style={{ margin: "5px 0", fontSize: "0.95rem", color: "#4b5563" }}>
+                        Kan Grubu: <strong style={{ color: "#ef4444" }}>{kanGrup}</strong>
+                      </p>
+                      <p style={{ margin: "5px 0", fontSize: "0.85rem", color: "#6b7280" }}>
+                        📍 {d.City || d.city || "-"} / {d.District || d.district || d.Region || d.region || "-"}
+                      </p>
+                    </>
+                  )}
+
+                  <div style={styles.donorAltBilgi}>
+                    {selectedTalepId
+                      ? `📅 Bildirim: ${new Date(d.SentDate || d.sentDate).toLocaleDateString()}`
+                      : `🗓 Son Bağış: ${d.LastDonationDate || d.lastDonationDate ? new Date(d.LastDonationDate || d.lastDonationDate).toLocaleDateString() : "Yok"}`
+                    }
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
