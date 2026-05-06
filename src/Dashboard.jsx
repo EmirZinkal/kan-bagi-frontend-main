@@ -32,8 +32,7 @@ const stokRengi = (miktar) => {
 
 function Dashboard() {
   // FORM STATE'LERİ
-  const [hastaneAdi, setHastaneAdi] = useState("");
-  const [adres, setAdres] = useState("");
+  const [hastaneBilgisi, setHastaneBilgisi] = useState(null);
   const [kanGrubu, setKanGrubu] = useState("");
   const [sartlar, setSartlar] = useState("");
   const [editingTalepId, setEditingTalepId] = useState(null);
@@ -121,6 +120,21 @@ function Dashboard() {
       const statsData = await statsRes.json();
       setIstatistik(statsData?.data || null);
 
+      const token = localStorage.getItem("token");
+      if (token) {
+        const decoded = parseJwt(token);
+        const userId = decoded["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || decoded?.nameid;
+
+        if (userId) {
+          const hospitalRes = await fetchWithAuth(`${API_URL}/api/hospitals/getbyuserid/${userId}`);
+          const hospitalData = await hospitalRes.json();
+          if (hospitalRes.ok) {
+            // Backend PropertyNamingPolicy = null olduğu için PascalCase (Data) kontrolü yapıyoruz
+            setHastaneBilgisi(hospitalData.Data || hospitalData.data);
+          }
+        }
+      }
+
     } catch (err) {
       console.error("Veri yükleme hatası:", err);
       toast.error("Veriler güncellenirken hata oluştu.");
@@ -171,44 +185,47 @@ function Dashboard() {
 
   // TALEP İŞLEMLERİ
   const talepKaydet = async () => {
-    if (!hastaneAdi || !adres || !kanGrubu || !sartlar) {
-      toast.error("Lütfen tüm alanları doldurun!");
+    if (!kanGrubu || !sartlar) {
+      toast.error("Lütfen kan grubunu ve aciliyet durumunu seçin!");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const endpoint = editingTalepId ? `${API_URL}/api/requests/update` : `${API_URL}/api/requests/add`;
-      const method = editingTalepId ? "PUT" : "POST";
-
+      // Backend'de PropertyNamingPolicy = null olduğu için PascalCase gönderiyoruz
       const payload = {
-        hospitalName: hastaneAdi,
-        address: adres,
-        bloodType: kanGrubu,
-        urgency: sartlar,
+        BloodType: kanGrubu,
+        Urgency: sartlar,
       };
 
-      if (editingTalepId) payload.id = editingTalepId;
+      // Güncelleme modu ise ID ekle
+      if (editingTalepId) {
+        payload.Id = editingTalepId;
+      }
+
+      const endpoint = editingTalepId
+        ? `${API_URL}/api/requests/update`
+        : `${API_URL}/api/requests/add`;
 
       const res = await fetchWithAuth(endpoint, {
-        method: method,
+        method: editingTalepId ? "PUT" : "POST",
         body: JSON.stringify(payload),
       });
 
-      if (res.status === 401) {
-        toast.error("Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.");
-        return;
-      }
+      // Backend IResult.Message döndüğü için önce metni alıyoruz
+      const message = await res.text();
 
       if (res.ok) {
-        toast.success(editingTalepId ? "Talep başarıyla güncellendi. 🌟" : "Talep başarıyla oluşturuldu. ✅");
+        toast.success(message || "İşlem başarıyla tamamlandı. ✅");
         formuTemizle();
         verileriYukle();
       } else {
-        toast.error("İşlem başarısız oldu. Lütfen verileri kontrol edin.");
+        // Backend BadRequest(result.Message) döndüğü için direkt mesajı gösteriyoruz
+        toast.error(message || "İşlem başarısız oldu.");
       }
     } catch (err) {
-      toast.error("Sunucuya bağlanırken kritik bir hata oluştu!");
+      console.error("Hata:", err);
+      toast.error("Sunucuya bağlanırken bir hata oluştu!");
     } finally {
       setIsSubmitting(false);
     }
@@ -240,12 +257,17 @@ function Dashboard() {
   const gercektenSil = async (id) => {
     try {
       const res = await fetchWithAuth(`${API_URL}/api/requests/delete/${id}`, { method: "DELETE" });
+
+      // Yanıt ne olursa olsun metin olarak oku
+      const message = await res.text();
+
       if (res.ok) {
-        toast.success("Talep başarıyla silindi. 🗑️");
+        toast.success("Talep başarıyla silindi.");
         if (editingTalepId === id) formuTemizle();
-        verileriYukle();
+        verileriYukle(); // Listeyi yenile
       } else {
-        toast.error("Silme işlemi başarısız oldu.");
+        // Backend'den gelen ErrorResult mesajını göster
+        toast.error(message || "Silme işlemi başarısız oldu.");
       }
     } catch (err) {
       toast.error("Sunucuya bağlanılamadı.");
@@ -254,12 +276,8 @@ function Dashboard() {
 
   const talepDuzenle = (t, e) => {
     e.stopPropagation();
-    const hAd = t.hospitalName || t.HospitalName || t.requesterName || t.RequesterName || "";
-    const adr = t.address || t.Address || "";
 
     setEditingTalepId(t.id || t.Id);
-    setHastaneAdi(hAd !== "Test Kullanici" ? hAd : "");
-    setAdres(adr);
     setKanGrubu(kanGrubuAl(t));
     setSartlar(aciliyetAl(t));
 
@@ -268,8 +286,6 @@ function Dashboard() {
 
   const formuTemizle = () => {
     setEditingTalepId(null);
-    setHastaneAdi("");
-    setAdres("");
     setKanGrubu("");
     setSartlar("");
   };
@@ -418,15 +434,15 @@ function Dashboard() {
             {editingTalepId ? "✏️ Talebi Güncelle" : "➕ Yeni Talep Oluştur"}
           </h3>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Hastane Adı</label>
-            <input style={styles.input} placeholder="Örn: Şehir Hastanesi" value={hastaneAdi} onChange={(e) => setHastaneAdi(e.target.value)} disabled={isSubmitting} />
+            <label style={styles.label}>🏥 İşlem Yapan Hastane</label>
+            <input
+              style={{ ...styles.input, backgroundColor: "#f3f4f6", color: "#6b7280" }}
+              value={hastaneBilgisi?.HospitalName || "Yükleniyor..."}
+              disabled
+            />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Adres</label>
-            <input style={styles.input} placeholder="Örn: Merkez Mah. Sağlık Sok. No:5" value={adres} onChange={(e) => setAdres(e.target.value)} disabled={isSubmitting} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Kan Grubu</label>
+            <label style={styles.label}>🩸 Kan Grubu</label>
             <select style={styles.input} value={kanGrubu} onChange={(e) => setKanGrubu(e.target.value)} disabled={isSubmitting}>
               <option value="">Seçiniz</option>
               {["A+", "A-", "B+", "B-", "AB+", "AB-", "0+", "0-"].map((g) => (
@@ -435,8 +451,13 @@ function Dashboard() {
             </select>
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Aciliyet / Şartlar</label>
-            <input style={styles.input} placeholder="İstediğiniz açıklamayı yazın..." value={sartlar} onChange={(e) => setSartlar(e.target.value)} disabled={isSubmitting} />
+            <label style={styles.label}>🚨 Aciliyet Durumu</label>
+            <select style={styles.input} value={sartlar} onChange={(e) => setSartlar(e.target.value)} disabled={isSubmitting}>
+              <option value="">Seçiniz</option>
+              <option value="Acil">Acil</option>
+              <option value="Kritik">Kritik</option>
+              <option value="Normal">Normal</option>
+            </select>
           </div>
 
           <button
