@@ -1,5 +1,17 @@
+const TURKCE_DURUMLAR = {
+  "Pending": "⏳ Yanıt Bekleniyor",
+  "Accepted": "✅ Gelecek",
+  "Rejected": "❌ Gelemiyor",
+  "Completed": "💉 Tamamlandı",
+  "ReadyForApproval": "📑 Onay Bekliyor",
+  "Active": "🟢 Aktif",
+  "Normal": "Düşük",
+  "Urgent": "Acil",
+  "Critical": "Kritik"
+};
 import { useEffect, useState } from "react";
 import { Toaster, toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 const API_URL = "http://localhost:5245";
 
@@ -33,10 +45,13 @@ const stokRengi = (miktar) => {
 
 function Dashboard() {
   // FORM STATE'LERİ
+  const navigate = useNavigate();
   const [hastaneBilgisi, setHastaneBilgisi] = useState(null);
   const [kanGrubu, setKanGrubu] = useState("");
   const [sartlar, setSartlar] = useState("");
   const [editingTalepId, setEditingTalepId] = useState(null);
+  const [ekSartlar, setEkSartlar] = useState(""); // YENİ EKLENEN ŞARTLAR STATE'İ
+
 
   // VERİ STATE'LERİ
   const [talepler, setTalepler] = useState([]);
@@ -53,6 +68,7 @@ function Dashboard() {
   const [profilAcik, setProfilAcik] = useState(false);
   const [kullaniciBilgisi, setKullaniciBilgisi] = useState(null);
 
+  // SEÇİM VE BİLDİRİM STATE'LERİ
   const [selectedTalepId, setSelectedTalepId] = useState(null);
   const [notifiedDonors, setNotifiedDonors] = useState([]);
 
@@ -79,20 +95,13 @@ function Dashboard() {
 
     try {
       const url = `${API_URL}/api/donors/completedonation?donorId=${donorId}${requestId ? `&requestId=${requestId}` : ""}`;
-      // Backend CompleteDonation metodu donorId'yi Query String olarak bekliyor olabilir 
-      // (Controller'da int donorId olarak tanımlandığı için)
-      const res = await fetchWithAuth(url, {
-        method: "POST"
-      });
-
+      const res = await fetchWithAuth(url, { method: "POST" });
       const result = await res.json();
 
       if (res.ok) {
         toast.success("Bağış başarıyla kaydedildi, stoklar güncellendi! 💉");
-        // Tüm verileri (stok, talep listesi, istatistikler) yenile
         verileriYukle();
         bagiscilariYukle();
-        // Eğer bir talep seçiliyse onun bildirim giden listesini de tazele
         if (requestId) talepBildirimleriniYukle(requestId);
       } else {
         toast.error(result.message || "Bağış tamamlanırken bir hata oluştu.");
@@ -116,55 +125,39 @@ function Dashboard() {
       return;
     }
 
-    // Token içinden ID'yi (nameidentifier) çekiyoruz
     const decodedToken = parseJwt(token);
-    // JWT standartlarında nameid veya nameidentifier olarak tutulur
     const aktifKullaniciId = decodedToken["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || decodedToken?.nameid;
-    if (!aktifKullaniciId) {
-      console.error("Token içinden ID çözülemedi!");
-      return;
-    }
 
-    console.log("Çözülen Kullanıcı ID:", aktifKullaniciId);
+    if (!aktifKullaniciId) return;
+
     try {
       setLoading(true);
 
-      // 1. İSTEK: Önce talepleri getir ve bitmesini bekle
       const talepRes = await fetchWithAuth(`${API_URL}/api/requests/getdetails`);
       const talepData = await talepRes.json();
       setTalepler(listeyeCevir(talepData));
 
-      // 2. İSTEK: Talepler bittikten sonra stokları getir
       const stokRes = await fetchWithAuth(`${API_URL}/api/stocks/getlist`);
       const stokData = await stokRes.json();
       const anaVeri = stokData.data || stokData.Data || [];
 
       if (Array.isArray(anaVeri)) {
         const duzenlenmisStoklar = anaVeri.map((s) => ({
-          // Backend'den gelen 'Quantity' bilgisini eşleştiriyoruz
           grup: s.bloodType || s.BloodType || "-",
           miktar: s.quantity || s.Quantity || s.unitCount || 0,
         }));
         setKanStoklari(duzenlenmisStoklar);
       }
 
-      // 3. İSTEK: En son istatistikleri getir
       const statsRes = await fetchWithAuth(`${API_URL}/api/statistics/getsummary`);
       const statsData = await statsRes.json();
       setIstatistik(statsData?.data || null);
 
-      const token = localStorage.getItem("token");
-      if (token) {
-        const decoded = parseJwt(token);
-        const userId = decoded["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"] || decoded?.nameid;
-
-        if (userId) {
-          const hospitalRes = await fetchWithAuth(`${API_URL}/api/hospitals/getbyuserid/${userId}`);
-          const hospitalData = await hospitalRes.json();
-          if (hospitalRes.ok) {
-            // Backend PropertyNamingPolicy = null olduğu için PascalCase (Data) kontrolü yapıyoruz
-            setHastaneBilgisi(hospitalData.Data || hospitalData.data);
-          }
+      if (aktifKullaniciId) {
+        const hospitalRes = await fetchWithAuth(`${API_URL}/api/hospitals/getbyuserid/${aktifKullaniciId}`);
+        const hospitalData = await hospitalRes.json();
+        if (hospitalRes.ok) {
+          setHastaneBilgisi(hospitalData.Data || hospitalData.data);
         }
       }
 
@@ -203,7 +196,6 @@ function Dashboard() {
   useEffect(() => { verileriYukle(); }, []);
   useEffect(() => { bagiscilariYukle(); }, [selectedKan]);
 
-  // PROFİL İŞLEMLERİ
   const profiliYukle = async () => {
     try {
       const res = await fetchWithAuth(`${API_URL}/api/auth/profile`);
@@ -212,7 +204,7 @@ function Dashboard() {
         setKullaniciBilgisi(data);
         setProfilAcik(true);
       } else {
-        toast.error("Yapım Aşamasında. ⏳");
+        toast.error("Profil bilgileri alınamadı.");
       }
     } catch (err) {
       toast.error("Sunucu bağlantı hatası.");
@@ -222,11 +214,11 @@ function Dashboard() {
   const cikisYap = () => {
     if (window.confirm("Çıkış yapmak istediğinize emin misiniz?")) {
       localStorage.removeItem("token");
+      localStorage.removeItem("kullanici");
       window.location.href = "/";
     }
   };
 
-  // TALEP İŞLEMLERİ
   const talepKaydet = async () => {
     if (!kanGrubu || !sartlar) {
       toast.error("Lütfen kan grubunu ve aciliyet durumunu seçin!");
@@ -235,13 +227,16 @@ function Dashboard() {
 
     setIsSubmitting(true);
     try {
-      // Backend'de PropertyNamingPolicy = null olduğu için PascalCase gönderiyoruz
       const payload = {
         BloodType: kanGrubu,
         Urgency: sartlar,
+        Conditions: ekSartlar,
+        HospitalName: hastaneBilgisi?.HospitalName || "Bilinmeyen Hastane",
+        Address: hastaneBilgisi?.Address || "",
+        City: hastaneBilgisi?.City || "",
+        District: hastaneBilgisi?.District || ""
       };
 
-      // Güncelleme modu ise ID ekle
       if (editingTalepId) {
         payload.Id = editingTalepId;
       }
@@ -255,7 +250,7 @@ function Dashboard() {
         body: JSON.stringify(payload),
       });
 
-      // Backend IResult.Message döndüğü için önce metni alıyoruz
+
       const message = await res.text();
 
       if (res.ok) {
@@ -263,7 +258,6 @@ function Dashboard() {
         formuTemizle();
         verileriYukle();
       } else {
-        // Backend BadRequest(result.Message) döndüğü için direkt mesajı gösteriyoruz
         toast.error(message || "İşlem başarısız oldu.");
       }
     } catch (err) {
@@ -300,16 +294,13 @@ function Dashboard() {
   const gercektenSil = async (id) => {
     try {
       const res = await fetchWithAuth(`${API_URL}/api/requests/delete/${id}`, { method: "DELETE" });
-
-      // Yanıt ne olursa olsun metin olarak oku
       const message = await res.text();
 
       if (res.ok) {
         toast.success("Talep başarıyla silindi.");
         if (editingTalepId === id) formuTemizle();
-        verileriYukle(); // Listeyi yenile
+        verileriYukle();
       } else {
-        // Backend'den gelen ErrorResult mesajını göster
         toast.error(message || "Silme işlemi başarısız oldu.");
       }
     } catch (err) {
@@ -319,11 +310,10 @@ function Dashboard() {
 
   const talepDuzenle = (t, e) => {
     e.stopPropagation();
-
     setEditingTalepId(t.id || t.Id);
     setKanGrubu(kanGrubuAl(t));
     setSartlar(aciliyetAl(t));
-
+    setEkSartlar(t.conditions || t.Conditions || ""); // DÜZENLERKEN ŞARTLARI DA GETİR
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -331,6 +321,7 @@ function Dashboard() {
     setEditingTalepId(null);
     setKanGrubu("");
     setSartlar("");
+    setEkSartlar(""); // FORMU TEMİZLERKEN ŞARTLARI DA SİL
   };
 
   return (
@@ -346,12 +337,18 @@ function Dashboard() {
         </div>
 
         <div style={styles.kullaniciMenusu}>
-          <button style={styles.profilButon} onClick={profiliYukle}>👤 Profilim</button>
+          {/* onClick kısmına navigate ekledik */}
+          <button
+            style={styles.profilButon}
+            onClick={() => navigate("/profil")}
+          >
+            👤 Profilim
+          </button>
+
           <button style={styles.cikisButon} onClick={cikisYap}>🚪 Çıkış Yap</button>
         </div>
       </header>
 
-      {/* PROFIL MODALI */}
       {profilAcik && kullaniciBilgisi && (
         <div style={styles.modalArkaplan} onClick={() => setProfilAcik(false)}>
           <div style={styles.modalIcerik} onClick={(e) => e.stopPropagation()}>
@@ -359,14 +356,12 @@ function Dashboard() {
               <h2 style={{ margin: 0 }}>Profil Bilgileri</h2>
               <button style={styles.modalKapat} onClick={() => setProfilAcik(false)}>✖</button>
             </div>
-
             <div style={styles.profilDetay}>
               <div style={styles.profilAvatar}>
                 {kullaniciBilgisi.fullName ? kullaniciBilgisi.fullName.charAt(0).toUpperCase() : "U"}
               </div>
               <h3 style={{ margin: "10px 0 5px 0" }}>{kullaniciBilgisi.fullName || "İsimsiz Kullanıcı"}</h3>
               <p style={{ color: "#6b7280", margin: "0 0 20px 0" }}>{kullaniciBilgisi.email}</p>
-
               <div style={styles.profilSatir}>
                 <strong>Kullanıcı Rolü:</strong>
                 <span style={styles.rolBadge}>{kullaniciBilgisi.role || "Standart Personel"}</span>
@@ -383,7 +378,6 @@ function Dashboard() {
         <div style={styles.bilgiMesaji}>⏳ Veriler sunucudan yükleniyor, lütfen bekleyin...</div>
       )}
 
-      {/* ÜST İSTATİSTİK KARTLARI */}
       <div style={styles.analizGrid}>
         <div style={{ ...styles.analizKart, borderTop: "4px solid #3b82f6" }}>
           <span style={styles.kartIkon}>📋</span>
@@ -406,7 +400,8 @@ function Dashboard() {
       </div>
 
       <div style={styles.grid}>
-        {/* SON TALEPLER */}
+
+        {/* SON TALEPLER KARTI */}
         <div style={styles.kart}>
           <h3 style={styles.kartAnaBaslik}>📋 Son Talepler</h3>
           <div style={styles.scrollArea}>
@@ -417,6 +412,7 @@ function Dashboard() {
                 const kan = kanGrubuAl(t);
                 const isSelected = selectedKan === kan;
                 const talepId = t.id || t.Id;
+                const ozelSart = t.conditions || t.Conditions || ""; // Özel Şartları çekiyoruz
 
                 return (
                   <div
@@ -424,14 +420,13 @@ function Dashboard() {
                     onClick={() => {
                       if (selectedTalepId === talepId) {
                         setSelectedTalepId(null);
-                        setNotificationDonors([]);
+                        setNotifiedDonors([]);
                       } else {
                         setSelectedTalepId(talepId);
                         talepBildirimleriniYukle(talepId);
                       }
                       setSelectedKan(kan);
                     }}
-                    //setSelectedKan(kan)}
                     style={{
                       ...styles.talepKart,
                       borderColor: isSelected ? "#ef4444" : "#e5e7eb",
@@ -444,12 +439,32 @@ function Dashboard() {
                       </strong>
                       <span style={styles.badge}>{kan}</span>
                     </div>
+
                     <p style={{ margin: "4px 0", color: "#4b5563", fontSize: "0.9rem" }}>
                       🚨 Aciliyet: <strong>{aciliyetAl(t)}</strong>
                     </p>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+
+                    {/* EĞER ÖZEL ŞART YAZILMIŞSA BURADA GÖSTERİLECEK 👇 */}
+                    {ozelSart && (
+                      <p style={{
+                        margin: "8px 0 0 0",
+                        padding: "8px",
+                        backgroundColor: "#fef3c7",
+                        color: "#92400e",
+                        borderRadius: "6px",
+                        fontSize: "0.85rem",
+                        fontStyle: "italic"
+                      }}>
+                        📝 {ozelSart}
+                      </p>
+                    )}
+                    {/* 👆 ÖZEL ŞART KISMI BİTİŞİ */}
+
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #f3f4f6" }}>
                       <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-                        Durum: <b style={{ color: "#374151" }}>{durumAl(t)}</b>
+                        <b style={{ color: "#374151" }}>
+                          {TURKCE_DURUMLAR[durumAl(t)] || durumAl(t)}
+                        </b>
                       </span>
                       <div style={{ display: "flex", gap: "8px" }}>
                         <button onClick={(e) => talepDuzenle(t, e)} style={styles.iconBtn}>✏️</button>
@@ -463,7 +478,7 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* KAN STOKLARI */}
+        {/* KAN STOKLARI KARTI */}
         <div style={styles.kart}>
           <h3 style={styles.kartAnaBaslik}>🩸 Kan Stokları</h3>
           <div style={styles.stokContainer}>
@@ -481,11 +496,12 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* TALEP OLUŞTUR / DÜZENLE */}
+        {/* TALEP OLUŞTUR / DÜZENLE KARTI */}
         <div style={{ ...styles.kart, border: editingTalepId ? "2px solid #3b82f6" : "none" }}>
           <h3 style={styles.kartAnaBaslik}>
             {editingTalepId ? "✏️ Talebi Güncelle" : "➕ Yeni Talep Oluştur"}
           </h3>
+
           <div style={styles.formGroup}>
             <label style={styles.label}>🏥 İşlem Yapan Hastane</label>
             <input
@@ -494,6 +510,7 @@ function Dashboard() {
               disabled
             />
           </div>
+
           <div style={styles.formGroup}>
             <label style={styles.label}>🩸 Kan Grubu</label>
             <select style={styles.input} value={kanGrubu} onChange={(e) => setKanGrubu(e.target.value)} disabled={isSubmitting}>
@@ -503,6 +520,7 @@ function Dashboard() {
               ))}
             </select>
           </div>
+
           <div style={styles.formGroup}>
             <label style={styles.label}>🚨 Aciliyet Durumu</label>
             <select style={styles.input} value={sartlar} onChange={(e) => setSartlar(e.target.value)} disabled={isSubmitting}>
@@ -511,6 +529,17 @@ function Dashboard() {
               <option value="Kritik">Kritik</option>
               <option value="Normal">Normal</option>
             </select>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>📝 Özel Şartlar</label>
+            <textarea
+              style={{ ...styles.input, minHeight: "80px", resize: "vertical" }}
+              placeholder="Örn: Son 24 saat içerisinde alkol almamış olmak..."
+              value={ekSartlar}
+              onChange={(e) => setEkSartlar(e.target.value)}
+              disabled={isSubmitting}
+            />
           </div>
 
           <button
@@ -538,17 +567,12 @@ function Dashboard() {
         </h3>
 
         <div style={styles.donorScroll}>
-          {/* Liste boşsa uyarı ver, doluysa map et */}
           {(selectedTalepId ? notifiedDonors : donors).length === 0 ? (
             <p style={styles.bosDurum}>Gösterilecek bağışçı bulunamadı.</p>
           ) : (
             (selectedTalepId ? notifiedDonors : donors).map((d, index) => {
-              // İsim eşleşmesini hem küçük hem büyük harf için kontrol ediyoruz
               const adSoyad = d.FullName || d.fullName || d.Title || d.title || "İsimsiz";
               const yanit = d.ResponseStatus || d.responseStatus || "Pending";
-              const kanGrup = d.BloodType || d.bloodType || "-";
-
-              // Konsoldaki 'unique key' hatasını önlemek için benzersiz bir ID oluşturuyoruz
               const benzersizKey = d.UserNotificationId || d.userNotificationId || d.DonorId || d.donorId || d.id || index;
 
               return (
@@ -558,7 +582,6 @@ function Dashboard() {
                   </div>
                   <h4 style={{ margin: "10px 0 5px 0", color: "#111827", fontSize: "1.1rem" }}>{adSoyad}</h4>
 
-                  {/* Sadece talep seçiliyse yanıt durumunu göster */}
                   {selectedTalepId && (
                     <>
                       <div style={{
@@ -567,13 +590,14 @@ function Dashboard() {
                         fontSize: "0.85rem",
                         fontWeight: "bold",
                         marginTop: "5px",
+                        // Renk mantığı veritabanından gelen orijinal kelimeye (Accepted/Rejected) göre çalışmaya devam eder
                         backgroundColor: yanit === "Accepted" ? "#dcfce7" : yanit === "Rejected" ? "#fee2e2" : "#f3f4f6",
                         color: yanit === "Accepted" ? "#166534" : yanit === "Rejected" ? "#991b1b" : "#374151"
                       }}>
-                        Durum: {yanit === "Accepted" ? "✅ Gelecek" : yanit === "Rejected" ? "❌ Gelemiyor" : "⏳ Yanıt Bekleniyor"}
+                        {/* Artık burada uzun uzun if-else (ternary) yazmana gerek yok 👇 */}
+                        Durum: {TURKCE_DURUMLAR[yanit] || "⏳ Bilinmiyor"}
                       </div>
 
-                      {/* EĞER BAĞIŞÇI GELECEĞİM DEMİŞSE BUTONU GÖSTER */}
                       {yanit === "Accepted" && (
                         <button
                           onClick={() => bagisTamamla(d.DonorId || d.donorId, selectedTalepId)}

@@ -7,6 +7,7 @@ import Dashboard from "./Dashboard";
 import DonorList from "./DonorList";
 import RequestList from "./RequestList";
 import Donors from "./Donor";
+import Profile from "./Profile"; // Profile.jsx dosyasının yolu neresiyse
 
 // Yeni eklediğimiz sayfa
 import KullaniciYonetimi from "./KullaniciYonetimi";
@@ -97,8 +98,7 @@ function App() {
             <Route path="/donors" element={<DonorList />} />
             <Route path="/requests" element={<RequestList />} />
             <Route path="/donor" element={<Donors />} />
-
-            {/* Yeni Kullanıcı Yönetimi Sayfamızın Rotası */}
+            <Route path="/profil" element={<Profile />} />
             <Route path="/kullanici-yonetimi" element={<KullaniciYonetimi />} />
           </Routes>
         </main>
