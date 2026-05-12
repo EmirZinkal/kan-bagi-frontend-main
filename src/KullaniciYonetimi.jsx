@@ -81,7 +81,7 @@ function KullaniciYonetimi() {
 
     setIsSubmitting(true);
     try {
-      const endpoint = editingId ? "/api/hospitals/update" : "/api/hospitals/registerhospital";
+      const endpoint = editingId ? "/api/hospitals/update-profile" : "/api/hospitals/registerhospital";
 
       const payload = {
         HospitalId: editingId ? Number(editingId) : 0,
